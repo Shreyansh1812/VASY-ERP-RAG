@@ -2,6 +2,7 @@ import os
 from langchain_neo4j import Neo4jGraph, GraphCypherQAChain
 from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
+
 # ==========================================
 # 1. CONFIGURATION & CONNECTIONS
 # ==========================================
@@ -15,7 +16,6 @@ print("Initializing local AI and Database connections...")
 llm = OllamaLLM(model="qwen2.5:3b", temperature=0) # Temperature 0 ensures factual, deterministic responses
 
 # Initialize the Graph Connection (The Memory/Database)
-# Note: LangChain will automatically query Neo4j for its exact schema when this connects!
 graph = Neo4jGraph(
     url=NEO4J_URI,
     username=NEO4J_USERNAME,
@@ -23,42 +23,42 @@ graph = Neo4jGraph(
 )
 
 # ==========================================
-# 2. THE FEW-SHOT GUARDRAILS (PROMPT ENGINEERING)
+# 2. THE FEW-SHOT GUARDRAILS (VASY ERP TUNED)
 # ==========================================
-# Small language models (like 3B parameter models) can hallucinate Cypher syntax.
-# We inject this strict template to teach it our EXACT database schema and give it examples.
 cypher_template = """
-You are an expert graph database translator. 
+You are an expert graph database translator for an ERP system. 
 Your job is to translate the user's natural language question into a precise Neo4j Cypher query.
 
 Strict Rules:
-1. ONLY use the nodes and relationships provided in the schema below. 
-2. Do NOT hallucinate or guess any property names.
-3. Your output must ONLY contain the Cypher query code. Do not explain the code. Do not add markdown blocks like ```cypher. 
+1. ONLY use the nodes, relationships, and properties provided in the schema below.
+2. ALWAYS check for the `is_deleted` flag on Orders. Assume the user only wants active orders (is_deleted = 0) unless they specify otherwise.
+3. If the user asks for "revenue" or "sales", you should SUM the `lineTotal` property on the `CONTAINS` relationship.
+4. CRITICAL: When the user asks for "Company X", they are referring to the integer property `company_id: X` on the Order or Product node. DO NOT confuse this with the Customer `id` property (which is a string like "CUST_0001").
+5. Your output must ONLY contain the Cypher query code. Do not explain the code. Do not add markdown blocks like ```cypher.
 
 Database Schema:
 {schema}
 
 Here are a few examples to guide you:
 
-Example 1: Top expensive products
-Question: What are the top 3 most expensive products?
-Cypher: MATCH (p:Product) RETURN p.name, p.category, p.price ORDER BY p.price DESC LIMIT 3
+Example 1: Multi-Tenancy & Revenue Aggregation
+Question: What is the total active revenue for Company 450?
+Cypher: MATCH (o:Order {{company_id: 450, is_deleted: 0}})-[rel:CONTAINS]->(p:Product) RETURN sum(rel.lineTotal) AS TotalRevenue
 
-Example 2: Cross-referencing orders
-Question: How many products are in order ORD_0001?
-Cypher: MATCH (o:Order {{id: 'ORD_0001'}})-[rel:CONTAINS]->(p:Product) RETURN count(p)
+Example 2: Complex Joins (Customer -> Order -> Product)
+Question: Which product category generated the most revenue from the Healthcare industry?
+Cypher: MATCH (c:Customer {{industry: 'Healthcare'}})-[:PLACED]->(o:Order {{is_deleted: 0}})-[rel:CONTAINS]->(p:Product) RETURN p.category, sum(rel.lineTotal) AS Revenue ORDER BY Revenue DESC LIMIT 1
 
-Example 3: Multi-hop traversal (Customer to Product)
-Question: Which customers bought products in the Electronics category?
-Cypher: MATCH (c:Customer)-[:PLACED]->(o:Order)-[:CONTAINS]->(p:Product) WHERE p.category = 'Electronics' RETURN DISTINCT c.name
+Example 3: Handling Typos & Company filtering
+Question: What is the revenue for Company 202 from the Electronics category?
+Cypher: MATCH (o:Order {{company_id: 202, is_deleted: 0}})-[rel:CONTAINS]->(p:Product {{category: 'Electronics'}}) RETURN sum(rel.lineTotal) AS TotalRevenue
 
 Now, translate the following question:
 Question: {question}
 Cypher:
 """
 
-# Convert the string template into a LangChain Prompt Object
+# --> THIS WAS THE MISSING LINE <--
 cypher_prompt = PromptTemplate(
     input_variables=["schema", "question"], 
     template=cypher_template
@@ -67,7 +67,6 @@ cypher_prompt = PromptTemplate(
 # ==========================================
 # 3. THE SYNTHESIS GUARDRAILS (QA PROMPT)
 # ==========================================
-# We must explicitly tell the SLM how to read the raw Python dictionaries.
 qa_template = """
 You are an expert ERP assistant. Use ONLY the following raw database output to answer the user's question.
 The data is provided in a Python dictionary format. Extract the relevant names and numbers to form a clear, conversational sentence.
@@ -93,25 +92,25 @@ qa_chain = GraphCypherQAChain.from_llm(
     graph=graph,
     verbose=True, 
     cypher_prompt=cypher_prompt,
-    qa_prompt=qa_prompt,  # <-- The missing link to fix the synthesis failure
+    qa_prompt=qa_prompt,  
     allow_dangerous_requests=True 
 )
+
 # ==========================================
 # 5. EXECUTION SYSTEM
 # ==========================================
 if __name__ == "__main__":
     print("\n" + "="*50)
-    print("🤖 Graph RAG Agent Online")
+    print("🤖 VasyERP Graph RAG Agent Online")
     print("="*50)
     
-    # We test a complex "Multi-Hop" query that forces the AI to jump across 
-    # Customer -> Order -> Product.
-    test_question = "What is the name and price of the most expensive product bought by a customer in the Retail industry?"
+    # THE ULTIMATE STRESS TEST: 
+    # This forces Qwen to handle multi-tenancy, soft-deletes, multi-hop joins, and math aggregation all at once.
+    test_question = "What is the total revenue generated from the 'Electronics' category for Company 202, excluding deleted orders?"
     
     print(f"\nUser Question: {test_question}\n")
     print("Agent is thinking (Generating Cypher, Executing, and Synthesizing)...\n")
     
-    # Run the chain
     try:
         response = qa_chain.invoke({"query": test_question})
         print("\n" + "="*50)
