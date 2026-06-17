@@ -1,0 +1,14 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Python caching
+__pycache__/
+*.pyc
+
+# Local data files (Optional: hide raw CSVs if they are massive or sensitive)
+*.csv
+
+# Environment variables
+.env
