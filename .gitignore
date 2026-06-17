@@ -14,4 +14,4 @@ __pycache__/
 .env
 
 #Ingest Pipelines
-.ingest_vasy_erp.py
+.ingest.py

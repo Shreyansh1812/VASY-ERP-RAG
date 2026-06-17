@@ -1,13 +1,19 @@
 import csv
+import os
 from neo4j import GraphDatabase
+from dotenv import load_dotenv
+
+# Load environment variables from the .env file
+load_dotenv()
 
 # ==========================================
 # 1. CONFIGURATION & CONNECTIONS
 # ==========================================
-URI = "bolt://localhost:7687"
-AUTH = ("neo4j", "Shreyu_12")
+URI = os.getenv("NEO4J_URI")
+AUTH = (os.getenv("NEO4J_USERNAME"), os.getenv("NEO4J_PASSWORD"))
 BASE_PATH = r"C:\Users\shrey\Downloads\Internship_2026"
 
+# ... [Rest of the script remains exactly the same] ...
 def read_and_scrub_csv(filename):
     """Reads CSV and scrubs VasyERP 'NaN' traps before they hit the database."""
     filepath = f"{BASE_PATH}\\{filename}"

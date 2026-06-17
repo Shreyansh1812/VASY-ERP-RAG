@@ -2,18 +2,22 @@ import os
 from langchain_neo4j import Neo4jGraph, GraphCypherQAChain
 from langchain_ollama import OllamaLLM
 from langchain_core.prompts import PromptTemplate
+from dotenv import load_dotenv
+
+# Load environment variables from the .env file
+load_dotenv()
 
 # ==========================================
 # 1. CONFIGURATION & CONNECTIONS
 # ==========================================
-NEO4J_URI = "bolt://localhost:7687"
-NEO4J_USERNAME = "neo4j"
-NEO4J_PASSWORD = "Shreyu_12"
+NEO4J_URI = os.getenv("NEO4J_URI")
+NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
 print("Initializing local AI and Database connections...")
 
 # Initialize the LLM (The Reasoning Engine)
-llm = OllamaLLM(model="qwen2.5:3b", temperature=0) # Temperature 0 ensures factual, deterministic responses
+llm = OllamaLLM(model="qwen2.5:3b", temperature=0)
 
 # Initialize the Graph Connection (The Memory/Database)
 graph = Neo4jGraph(
@@ -22,6 +26,7 @@ graph = Neo4jGraph(
     password=NEO4J_PASSWORD
 )
 
+# ... [Rest of the script remains exactly the same] ...
 # ==========================================
 # 2. THE FEW-SHOT GUARDRAILS (VASY ERP TUNED)
 # ==========================================
@@ -97,25 +102,41 @@ qa_chain = GraphCypherQAChain.from_llm(
 )
 
 # ==========================================
-# 5. EXECUTION SYSTEM
+# 5. EXECUTION SYSTEM (INTERACTIVE CHAT)
 # ==========================================
 if __name__ == "__main__":
     print("\n" + "="*50)
     print("🤖 VasyERP Graph RAG Agent Online")
-    print("="*50)
+    print("Type 'exit' or 'quit' to end the session.")
+    print("="*50 + "\n")
     
-    # THE ULTIMATE STRESS TEST: 
-    # This forces Qwen to handle multi-tenancy, soft-deletes, multi-hop joins, and math aggregation all at once.
-    test_question = "What is the total revenue generated from the 'Electronics' category for Company 202, excluding deleted orders?"
-    
-    print(f"\nUser Question: {test_question}\n")
-    print("Agent is thinking (Generating Cypher, Executing, and Synthesizing)...\n")
-    
-    try:
-        response = qa_chain.invoke({"query": test_question})
-        print("\n" + "="*50)
-        print("Final Answer:")
-        print(response["result"])
-        print("="*50 + "\n")
-    except Exception as e:
-        print(f"\nPipeline Failed. Error: {e}")
+    # Start the continuous chat loop
+    while True:
+        try:
+            # 1. Get dynamic user input
+            user_question = input("🧑‍💼 You: ")
+            
+            # 2. Check for exit commands
+            if user_question.lower() in ['exit', 'quit', 'q']:
+                print("\nShutting down the ERP Assistant. Goodbye! 👋\n")
+                break
+                
+            # Skip empty inputs
+            if not user_question.strip():
+                continue
+                
+            print("🧠 Agent is thinking (Generating Cypher & Synthesizing)...\n")
+            
+            # 3. Invoke the chain dynamically
+            response = qa_chain.invoke({"query": user_question})
+            
+            # 4. Print the final synthesized answer
+            print("\n" + "="*50)
+            print("🤖 Agent:")
+            print(response["result"])
+            print("="*50 + "\n")
+            
+        except Exception as e:
+            # If a query fails, catch the error so the loop doesn't crash
+            print(f"\n❌ Pipeline Failed for this query. Error: {e}\n")
+            print("Let's try another question.\n")
