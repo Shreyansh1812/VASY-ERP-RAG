@@ -15,3 +15,6 @@ __pycache__/
 
 #Ingest Pipelines
 ingest.py
+
+
+visualsation-schema.png
